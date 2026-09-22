@@ -91,7 +91,7 @@ class Backtester:
         agent: QLearningAgent,
         risk_manager: RiskManager,
         training: bool = True,
-        require_confirmation: bool = True,
+        require_confirmation: bool = False,
     ) -> None:
         self.agent = agent
         self.risk = risk_manager
