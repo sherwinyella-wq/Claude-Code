@@ -48,7 +48,7 @@ def run_one(seed: int, epochs: int, bars: int, start_equity: float) -> dict:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--seeds", type=int, default=30)
-    p.add_argument("--epochs", type=int, default=12)
+    p.add_argument("--epochs", type=int, default=20)
     p.add_argument("--bars", type=int, default=4000)
     p.add_argument("--start-equity", type=float, default=10_000.0)
     args = p.parse_args()

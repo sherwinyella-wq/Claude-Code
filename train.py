@@ -29,7 +29,7 @@ from trading_agent import (
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--bars", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--start-equity", type=float, default=10_000.0)
