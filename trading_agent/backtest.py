@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from .agent import QLearningAgent, build_state, HOLD, LONG, SHORT
-from .indicators import atr, rsi
+from .indicators import atr, rsi, sma
 from .patterns import Bar, dominant_signal, detect_trend
 from .risk import RiskManager, Trade
 from .sentiment import score_headlines, world_risk_level
@@ -91,10 +91,12 @@ class Backtester:
         agent: QLearningAgent,
         risk_manager: RiskManager,
         training: bool = True,
+        require_confirmation: bool = True,
     ) -> None:
         self.agent = agent
         self.risk = risk_manager
         self.training = training
+        self.require_confirmation = require_confirmation
 
     def run(
         self,
@@ -107,6 +109,17 @@ class Backtester:
         lows = [b.low for b in bars]
         rsi_series = rsi(closes, 14)
         atr_series = atr(highs, lows, closes, 14)
+        sma_series = sma(closes, 20)
+
+        # Rolling median ATR is used to detect volatility spikes.
+        def _median_atr(end_i: int, window: int = 50) -> float:
+            start = max(0, end_i - window)
+            vals = [a for a in atr_series[start:end_i] if a == a and a > 0]
+            if not vals:
+                return 0.0
+            vals = sorted(vals)
+            n = len(vals)
+            return vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
 
         open_trade: Optional[Trade] = None
         pending_state = None
@@ -162,17 +175,37 @@ class Backtester:
                 continue
 
             direction = 1 if action == LONG else -1
-            if not self.risk.is_predictable(signal, direction):
-                # Tiny penalty for picking a direction the gate rejects, so the
-                # agent learns to prefer HOLD when the pattern is unconvincing.
+            atr_val = atr_series[i]
+            med = _median_atr(i)
+            atr_ratio = (atr_val / med) if (med and atr_val == atr_val) else 1.0
+            mean_val = sma_series[i]
+            atr_from_mean = 0.0
+            if mean_val == mean_val and atr_val == atr_val and atr_val > 0:
+                atr_from_mean = (closes[i] - mean_val) / atr_val
+            gate_ok = self.risk.is_predictable(
+                signal, direction,
+                trend=trend, sentiment=sent, atr_ratio=atr_ratio,
+                rsi_value=rsi_series[i], atr_from_mean=atr_from_mean,
+            )
+            if not gate_ok:
                 if self.training:
                     next_state = build_state(trend, signal, rsi_series[i], sent, risk_lvl, False)
                     self.agent.update(state, action, -0.05, next_state)
                 continue
 
+            # Confirmation bar: require the *current* bar to close in the
+            # trade direction relative to its open. Filters signals whose
+            # follow-through fails, at the cost of a slightly worse entry
+            # price. Increases win rate by throwing out false breakouts.
+            if self.require_confirmation:
+                bar = bars[i]
+                if direction > 0 and bar.close <= bar.open:
+                    continue
+                if direction < 0 and bar.close >= bar.open:
+                    continue
+
             entry = closes[i]
-            atr_val = atr_series[i]
-            if atr_val != atr_val or atr_val <= 0:  # NaN or zero
+            if atr_val != atr_val or atr_val <= 0:
                 continue
             trade = self.risk.build_trade(direction, entry, atr_val, i, world_risk=risk_lvl)
             if trade is None:

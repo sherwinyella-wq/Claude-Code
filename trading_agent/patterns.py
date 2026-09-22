@@ -174,14 +174,14 @@ def dominant_signal(bars: Sequence[Bar]) -> float:
     """Aggregate signal in [-1, 1]. Used as the predictability gate."""
     feats = pattern_features(bars)
     weights = {
-        "trend": 0.25,
-        "bull_engulf": 0.10,
-        "bear_engulf": 0.10,
-        "hammer": 0.10,
-        "shooting_star": 0.10,
-        "double_bottom": 0.15,
-        "double_top": 0.15,
-        "breakout": 0.20,
+        "trend": 0.35,
+        "bull_engulf": 0.08,
+        "bear_engulf": 0.08,
+        "hammer": 0.08,
+        "shooting_star": 0.08,
+        "double_bottom": 0.13,
+        "double_top": 0.13,
+        "breakout": 0.22,
     }
     score = sum(feats[k] * weights[k] for k in feats)
     return max(-1.0, min(1.0, score))

@@ -5,9 +5,10 @@ target profit, i.e. risk:reward = 1:2. The take-profit distance is
 sized off ATR so it adapts to current volatility, and the stop is then
 mechanically half of that.
 
-The manager also gates entries on pattern "predictability": the
-aggregate pattern signal must exceed `min_signal` (default 0.35) in the
-direction of the trade, otherwise the setup is rejected.
+Beyond the base predictability gate, this module supports several
+optional confluence filters that only allow a trade when multiple
+independent signals agree. Enabled by default; each can be toggled off
+via the constructor to isolate their contribution to win rate.
 """
 
 from dataclasses import dataclass
@@ -58,19 +59,85 @@ class RiskManager:
         account_equity: float = 10_000.0,
         risk_per_trade: float = 0.01,
         atr_target_mult: float = 2.0,
-        min_signal: float = 0.45,
+        min_signal: float = 0.50,
+        require_trend_confluence: bool = True,
+        require_sentiment_agreement: bool = True,
+        volatility_guard: bool = True,
+        max_atr_ratio: float = 1.8,
+        rsi_extreme_guard: bool = True,
+        rsi_overbought: float = 82.0,
+        rsi_oversold: float = 18.0,
+        overextension_guard: bool = True,
+        max_atr_from_mean: float = 2.5,
     ) -> None:
         self.account_equity = account_equity
         self.risk_per_trade = risk_per_trade
         self.atr_target_mult = atr_target_mult
         self.min_signal = min_signal
+        self.require_trend_confluence = require_trend_confluence
+        self.require_sentiment_agreement = require_sentiment_agreement
+        self.volatility_guard = volatility_guard
+        self.max_atr_ratio = max_atr_ratio
+        self.rsi_extreme_guard = rsi_extreme_guard
+        self.rsi_overbought = rsi_overbought
+        self.rsi_oversold = rsi_oversold
+        self.overextension_guard = overextension_guard
+        self.max_atr_from_mean = max_atr_from_mean
 
-    def is_predictable(self, signal: float, direction: int) -> bool:
-        """Gate: only take trades when the pattern signal is strong
-        and aligned with the trade direction."""
-        if direction > 0:
-            return signal >= self.min_signal
-        return signal <= -self.min_signal
+    def is_predictable(
+        self,
+        signal: float,
+        direction: int,
+        trend: float = 0.0,
+        sentiment: float = 0.0,
+        atr_ratio: float = 1.0,
+        rsi_value: float = 50.0,
+        atr_from_mean: float = 0.0,
+    ) -> bool:
+        """Gate: pattern signal must be strong and aligned with direction,
+        with layered confluence checks. `atr_from_mean` is signed distance
+        of price from a short SMA measured in ATRs (positive = above)."""
+
+        # Base signal gate.
+        if direction > 0 and signal < self.min_signal:
+            return False
+        if direction < 0 and signal > -self.min_signal:
+            return False
+
+        # Trend alignment: LONG shouldn't fight a strong downtrend and
+        # vice versa (soft guard — a modest counter-signal is allowed).
+        if self.require_trend_confluence:
+            if direction > 0 and trend < -0.10:
+                return False
+            if direction < 0 and trend > 0.10:
+                return False
+
+        # Sentiment agreement: news mood shouldn't sharply contradict direction.
+        if self.require_sentiment_agreement:
+            if direction > 0 and sentiment < -0.5:
+                return False
+            if direction < 0 and sentiment > 0.5:
+                return False
+
+        # Volatility guard: skip during shock regimes.
+        if self.volatility_guard and atr_ratio > self.max_atr_ratio:
+            return False
+
+        # RSI extreme guard: don't chase overbought longs / oversold shorts.
+        if self.rsi_extreme_guard and rsi_value == rsi_value:  # NaN check
+            if direction > 0 and rsi_value > self.rsi_overbought:
+                return False
+            if direction < 0 and rsi_value < self.rsi_oversold:
+                return False
+
+        # Overextension guard: reject chasing price too far from mean.
+        if self.overextension_guard:
+            if direction > 0 and atr_from_mean > self.max_atr_from_mean:
+                return False
+            if direction < 0 and atr_from_mean < -self.max_atr_from_mean:
+                return False
+
+        return True
 
     def build_trade(
         self,

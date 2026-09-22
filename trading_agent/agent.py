@@ -38,18 +38,18 @@ def bucket_trend(t: float) -> int:
 
 
 def bucket_pattern(p: float) -> int:
-    """Buckets aligned with the RiskManager gate (|signal| >= 0.45):
+    """Buckets aligned with the RiskManager gate (|signal| >= 0.50):
     0 = strong bear (gate passes short), 1 = weak bear (gate blocks),
     2 = neutral (gate blocks), 3 = weak bull (gate blocks),
     4 = strong bull (gate passes long).
     """
-    if p <= -0.45:
+    if p <= -0.50:
         return 0
     if p <= -0.15:
         return 1
     if p < 0.15:
         return 2
-    if p < 0.45:
+    if p < 0.50:
         return 3
     return 4
 
